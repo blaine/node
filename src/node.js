@@ -37,10 +37,21 @@ node.dns.createConnection = removed("node.dns.createConnection() has moved. Use 
 
 // Module 
 
+globalModuleCache = {};
+
 function Module (id, parent) {
   this.id = id;
   this.exports = {};
   this.parent = parent;
+
+  this.moduleCache = {};
+
+  if (parent) {
+    process.mixin(this.moduleCache, parent.moduleCache);
+    this.moduleCache[parent.id] = parent;
+  } else {
+    process.mixin(this.moduleCache, globalModuleCache);
+  }
 
   this.filename = null;
   this.loaded = false;
@@ -49,16 +60,16 @@ function Module (id, parent) {
   this.children = [];
 };
 
-var moduleCache = {};
-
 function createModule (id, parent) {
-  if (id in moduleCache) {
+  var cache = (parent) ? parent.moduleCache : globalModuleCache;
+
+  if (id in cache) {
     debug("found " + JSON.stringify(id) + " in cache");
-    return moduleCache[id];
+    return cache[id];
   }
-  debug("didn't found " + JSON.stringify(id) + " in cache. creating new module");
+  debug("didn't find " + JSON.stringify(id) + " in cache. creating new module");
   var m = new Module(id, parent);
-  moduleCache[id] = m;
+  cache[id] = m;
   return m;
 };
 
@@ -798,11 +809,7 @@ function findModulePath (id, dirs, callback) {
   searchLocations();
 }
 
-function loadModule (request, parent) {
-  // This is the promise which is actually returned from require.async()
-  var loadPromise = new events.Promise();
-
-  // debug("loadModule REQUEST  " + (request) + " parent: " + JSON.stringify(parent));
+function resolveModulePath(request, parent) {
 
   var id, paths;
   if (request.charAt(0) == "." && (request.charAt(1) == "/" || request.charAt(1) == ".")) {
@@ -818,14 +825,26 @@ function loadModule (request, parent) {
     paths = process.paths;
   }
 
-  if (id in moduleCache) {
+  return [id, paths];
+}
+
+function loadModule (request, parent) {
+  // This is the promise which is actually returned from require.async()
+  var loadPromise = new events.Promise();
+
+  // debug("loadModule REQUEST  " + (request) + " parent: " + JSON.stringify(parent));
+  var resolvedModule = resolveModulePath(request, parent);
+  var id = resolvedModule[0],
+      paths = resolvedModule[1];
+
+  if (id in parent.moduleCache) {
     debug("found  " + JSON.stringify(id) + " in cache");
     // In cache
-    var module = moduleCache[id];
+    var module = parent.moduleCache[id];
     process.nextTick(function () {
       loadPromise.emitSuccess(module.exports);
     });
-  } else {
+   } else {
     debug("looking for " + JSON.stringify(id) + " in " + JSON.stringify(paths));
     // Not in cache
     findModulePath(request, paths, function (filename) {
@@ -954,6 +973,11 @@ Module.prototype.waitChildrenLoad = function (callback) {
   }
   if (children.length == nloaded && callback) callback();
 };
+
+Module.prototype.unCacheModule = function (request) {
+  resolvedModule = resolveModulePath(request, this);
+  delete this.moduleCache[resolvedModule[0]]
+}
 
 
 process.exit = function (code) {

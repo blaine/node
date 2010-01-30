@@ -41,8 +41,8 @@ assert.notEqual(one.hello, two.hello);
 debug("test cycles containing a .. path");
 var root = require("./fixtures/cycles/root"),
   foo = require("./fixtures/cycles/folder/foo");
-assert.equal(root.foo, foo);
-assert.equal(root.sayHello(), root.hello);
+assert.equal(root.sayHello(), 'hello');
+assert.equal(foo.hello(), 'hello');
 
 var errorThrown = false;
 try {
